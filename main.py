@@ -39,7 +39,7 @@ async def verify_and_store_telemetry(bundle: TelemetryBundle):
         SHARED_SECRET, raw_log_reconstructed.encode("utf-8"), hashlib.sha256
     ).hexdigest()
 
-    # Constant-time comparison to prevent timing side-channel attacks
+    # Constant-time comparison
     is_valid = hmac.compare_digest(
         computed_hmac.lower(), bundle.sha256_signature.lower()
     )
@@ -49,7 +49,10 @@ async def verify_and_store_telemetry(bundle: TelemetryBundle):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
                 "error": "AUTHENTICATION_FAILED",
-                "message": "HMAC signature mismatch. Invalid key or tampered log.",
+                "message": "HMAC signature mismatch.",
+                "server_received_string": repr(raw_log_reconstructed),
+                "server_expected_signature": computed_hmac,
+                "loaded_secret_first_3_chars": RAW_SECRET[:3] + "..."
             },
         )
 
