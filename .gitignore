@@ -1,0 +1,21 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments & Secrets (CRITICAL)
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# Docker logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# VS Code directory
+.vscode/
