@@ -49,10 +49,7 @@ async def verify_and_store_telemetry(bundle: TelemetryBundle):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
                 "error": "AUTHENTICATION_FAILED",
-                "message": "HMAC signature mismatch.",
-                "server_received_string": repr(raw_log_reconstructed),
-                "server_expected_signature": computed_hmac,
-                "loaded_secret_first_3_chars": RAW_SECRET[:3] + "..."
+                "message": "HMAC signature mismatch. Invalid key or tampered log."
             },
         )
 
