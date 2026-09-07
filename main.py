@@ -73,7 +73,7 @@ SHARED_SECRET = RAW_SECRET.encode("utf-8")
 # -----------------------------------------------------------------------------
 class TelemetryBundle(BaseModel):
     pilot_id:        str
-    timestamp_ms:    int
+    upload_timestamp: str
     sha256_signature: str
     total_entries:   int
     telemetry_log:   List[str]
@@ -144,7 +144,7 @@ async def verify_and_store_telemetry(
     # ── Persist to PostgreSQL ─────────────────────────────────────────────────
     db_record = TelemetryRecord(
         pilot_id        = bundle.pilot_id,
-        batch_timestamp = bundle.timestamp_ms,
+        batch_timestamp = 0,
         raw_log         = raw_log_reconstructed,
         record_count    = bundle.total_entries,
         signature_used  = computed_hmac,
