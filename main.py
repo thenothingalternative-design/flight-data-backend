@@ -16,9 +16,7 @@ load_dotenv()
 # -----------------------------------------------------------------------------
 # 1. DATABASE CONFIGURATION
 # -----------------------------------------------------------------------------
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://user:password@localhost:5432/telemetry_db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -36,7 +34,7 @@ class TelemetryRecord(Base):
 
     id              = Column(Integer,    primary_key=True, index=True)
     pilot_id        = Column(String(50), nullable=False,   index=True)
-    batch_timestamp = Column(BigInteger, nullable=False)               # millis() or Unix ms — won't overflow
+    batch_timestamp = Column(BigInteger, nullable=False)              
     raw_log         = Column(Text,       nullable=False)
     record_count    = Column(Integer,    nullable=False)
     signature_used  = Column(String(64), nullable=False)
@@ -51,26 +49,21 @@ def get_db():
         db.close()
 
 
-# -----------------------------------------------------------------------------
-# 2. APP STARTUP / SHUTDOWN
-# -----------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     print("[DB] Telemetry tables initialized.")
     yield
-    # (add any shutdown cleanup here if needed)
 
 
 app = FastAPI(title="Secure Telemetry Service", lifespan=lifespan)
 
-RAW_SECRET    = os.getenv("SHARED_SECRET", "MY_SECRET_FLIGHT_KEY_2026")
+RAW_SECRET = os.getenv("SHARED_SECRET")
+if not RAW_SECRET:
+    raise RuntimeError("SHARED_SECRET is not set")
 SHARED_SECRET = RAW_SECRET.encode("utf-8")
 
 
-# -----------------------------------------------------------------------------
-# 3. REQUEST SCHEMA
-# -----------------------------------------------------------------------------
 class TelemetryBundle(BaseModel):
     pilot_id:        str
     upload_timestamp: str
@@ -93,9 +86,6 @@ class TelemetryBundle(BaseModel):
         return v
 
 
-# -----------------------------------------------------------------------------
-# 4. ROUTES
-# -----------------------------------------------------------------------------
 @app.get("/")
 def health_check():
     return {"status": "online", "service": "ESP32 Telemetry Receiver"}
@@ -105,7 +95,6 @@ def health_check():
 async def verify_and_store_telemetry(
     bundle: TelemetryBundle, db: Session = Depends(get_db)
 ):
-    # ── Validate entry count matches actual log length ────────────────────────
     if bundle.total_entries != len(bundle.telemetry_log):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -115,33 +104,28 @@ async def verify_and_store_telemetry(
             },
         )
 
-    # ── Reconstruct raw CSV bytes exactly as the ESP32 wrote them to SPIFFS ──
+    # ── Reconstruct raw CSV bytes exactly as the ESP32 wrote them to LittleFS ──
     # ESP32 writes each line as "...\n", readStringUntil('\n') strips the \n,
     # trim() removes any \r, so rejoining with \n and a final \n reproduces
-    # the original file byte-for-byte.
+    # the original file completely, allowing the HMAC to be verified correctly. 
+    # All of this is outlined in the README of both flight-data-firmware AND flight-data-backend
     raw_log_reconstructed = "\n".join(bundle.telemetry_log) + "\n"
 
-    # ── Compute HMAC-SHA256 ───────────────────────────────────────────────────
     computed_hmac = hmac.new(
         SHARED_SECRET,
         raw_log_reconstructed.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
 
-    # ── Constant-time comparison (prevents timing attacks) ───────────────────
     if not hmac.compare_digest(computed_hmac.lower(), bundle.sha256_signature.lower()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
                 "error": "AUTHENTICATION_FAILED",
                 "message": "HMAC signature mismatch — invalid key or tampered log.",
-                # During development only — remove before production:
-                "debug_computed": computed_hmac,
-                "debug_received": bundle.sha256_signature,
             },
         )
 
-    # ── Persist to PostgreSQL ─────────────────────────────────────────────────
     db_record = TelemetryRecord(
         pilot_id        = bundle.pilot_id,
         batch_timestamp = 0,
